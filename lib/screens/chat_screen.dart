@@ -303,7 +303,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 const SizedBox(width: 6),
                 const Text(
-                  'Tip: Long press TextField to paste images or format text',
+                  'Tip: Long press TextField to paste images\n or format text by selecting text',
                   style: TextStyle(
                     color: PasteSnapColors.textPrimary,
                     fontSize: 14,
