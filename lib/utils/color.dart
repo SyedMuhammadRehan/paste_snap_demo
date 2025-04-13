@@ -13,7 +13,7 @@ class PasteSnapColors {
   
   // Message bubbles
   static const Color messageBubble = Color.fromARGB(255, 198, 178, 249); // Light purple
-  static const Color messageBubbleGradientEnd = Color.fromARGB(255, 200, 185, 249); 
+  static const Color messageBubbleGradientEnd = Color.fromARGB(255, 178, 157, 244); 
   
   // UI elements
   static const Color inputBackground = Color(0xFFF0F0F5);

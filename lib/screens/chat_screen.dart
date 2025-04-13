@@ -1,11 +1,11 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:paste_snap_demo/model/formatting_range.dart';
 import 'package:paste_snap_demo/model/message.dart';
 import 'package:paste_snap_demo/utils/color.dart';
+import 'package:paste_snap_demo/utils/custom_controller.dart';
 import '../bloc/chat_bloc_bloc.dart';
-
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -15,12 +15,13 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final TextEditingController _messageController = TextEditingController();
+  late StyleableTextFieldController _messageController;
   final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _messageController = StyleableTextFieldController(formattingRanges: []);
     _messageController.addListener(_onTextChanged);
   }
 
@@ -33,7 +34,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onTextChanged() {
-    context.read<ChatBloc>().add(UpdateTextEvent(_messageController.text));
+    context.read<ChatBloc>().add(UpdateTextEvent(
+      _messageController.text,
+      _messageController.selection,
+    ));
   }
 
   void _handlePaste() {
@@ -45,10 +49,13 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _messageController.text.trim();
     final imageData = state.previewImage;
     if (text.isNotEmpty || imageData != null) {
-      context
-          .read<ChatBloc>()
-          .add(SendMessageEvent(text: text, imageData: imageData));
+      context.read<ChatBloc>().add(SendMessageEvent(
+        text: text,
+        imageData: imageData,
+        formattingRanges: state.formattingRanges,
+      ));
       _messageController.clear();
+      setState(() {}); // Force rebuild to clear any residual state
       Future.delayed(const Duration(milliseconds: 100), () {
         if (_scrollController.hasClients) {
           _scrollController.animateTo(
@@ -61,13 +68,48 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
  
-
   void _clearPreviewImage() {
     final currentState = context.read<ChatBloc>().state;
     context.read<ChatBloc>().emit(ChatState(
           text: currentState.text,
           messages: currentState.messages,
         ));
+  }
+
+  void _toggleBold() {
+    final selection = _messageController.selection;
+    if (selection.start == -1 || selection.end == -1 || selection.start == selection.end) return;
+
+    context.read<ChatBloc>().add(ToggleBoldEvent(selection));
+    _forceTextFieldRebuild();
+    ContextMenuController.removeAny();
+  }
+
+  void _toggleItalic() {
+    final selection = _messageController.selection;
+    if (selection.start == -1 || selection.end == -1 || selection.start == selection.end) return;
+
+    context.read<ChatBloc>().add(ToggleItalicEvent(selection));
+    _forceTextFieldRebuild();
+    ContextMenuController.removeAny();
+  }
+
+  void _toggleStrikethrough() {
+    final selection = _messageController.selection;
+    if (selection.start == -1 || selection.end == -1 || selection.start == selection.end) return;
+
+    context.read<ChatBloc>().add(ToggleStrikethroughEvent(selection));
+    _forceTextFieldRebuild();
+    ContextMenuController.removeAny();
+  }
+
+  void _forceTextFieldRebuild() {
+    final currentText = _messageController.text;
+    final currentSelection = _messageController.selection;
+    setState(() {
+      _messageController.text = currentText;
+      _messageController.selection = currentSelection;
+    });
   }
 
   @override
@@ -85,9 +127,10 @@ class _ChatScreenState extends State<ChatScreen> {
       child: SafeArea(
         child: BlocConsumer<ChatBloc, ChatState>(
           listenWhen: (previous, current) =>
-              previous.previewImage != current.previewImage,
+              previous.previewImage != current.previewImage ||
+              previous.formattingRanges != current.formattingRanges,
           listener: (context, state) {
-            // Add any side effects here
+            _messageController.updateFormatting(state.formattingRanges);
           },
           builder: (context, state) {
             return Column(
@@ -195,8 +238,7 @@ class _ChatScreenState extends State<ChatScreen> {
               itemCount: state.messages.length,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               itemBuilder: (context, index) {
-                final message = state.messages[
-                    state.messages.length - 1 - index]; // Reverse the order
+                final message = state.messages[state.messages.length - 1 - index];
                 return _buildMessageBubble(message, index, state);
               },
             ),
@@ -261,7 +303,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 const SizedBox(width: 6),
                 const Text(
-                  'Tip: Long press TextField to paste images',
+                  'Tip: Long press TextField to paste images or format text',
                   style: TextStyle(
                     color: PasteSnapColors.textPrimary,
                     fontSize: 14,
@@ -277,8 +319,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildMessageBubble(Message message, int index, ChatState state) {
-    final isLastMessage =
-        index == state.messages.length - 1; // Newest message at the bottom
+    final isLastMessage = index == state.messages.length - 1;
     final showDate = isLastMessage ||
         index < state.messages.length - 1 &&
             _shouldShowDateSeparator(message, index);
@@ -293,7 +334,7 @@ class _ChatScreenState extends State<ChatScreen> {
             mainAxisAlignment: MainAxisAlignment.end,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const SizedBox(width: 60), // Space for potential status icons
+              const SizedBox(width: 60),
               Flexible(
                 child: Container(
                   padding: const EdgeInsets.all(4),
@@ -307,10 +348,10 @@ class _ChatScreenState extends State<ChatScreen> {
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: const BorderRadius.only(
-                      topLeft:  Radius.circular(18),
-                      topRight:  Radius.circular(18),
-                      bottomLeft:  Radius.circular(18),
-                      bottomRight:  Radius.circular(4),
+                      topLeft: Radius.circular(18),
+                      topRight: Radius.circular(18),
+                      bottomLeft: Radius.circular(18),
+                      bottomRight: Radius.circular(4),
                     ),
                     boxShadow: [
                       BoxShadow(
@@ -348,11 +389,10 @@ class _ChatScreenState extends State<ChatScreen> {
                       if (message.text != null && message.text!.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.all(8.0),
-                          child: Text(
-                            message.text!,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
+                          child: RichText(
+                            text: _buildFormattedTextSpan(
+                              message.text!,
+                              message.formattingRanges,
                             ),
                           ),
                         ),
@@ -389,6 +429,60 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  TextSpan _buildFormattedTextSpan(String text, List<FormattingRange> ranges) {
+    final textSpanChildren = <InlineSpan>[];
+    var lastEnd = 0;
+
+    final sortedRanges = List<FormattingRange>.from(ranges)
+      ..sort((a, b) => a.start.compareTo(b.start));
+
+    for (final range in sortedRanges) {
+      if (range.start < 0 || range.end > text.length || range.start >= range.end) {
+        continue;
+      }
+
+      if (range.start > lastEnd) {
+        final unstyledText = text.substring(lastEnd, range.start);
+        textSpanChildren.add(TextSpan(
+          text: unstyledText,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+          ),
+        ));
+      }
+
+      final rangeStyle = TextStyle(
+        fontWeight: range.isBold ? FontWeight.bold : null,
+        fontStyle: range.isItalic ? FontStyle.italic : null,
+        decoration: range.isStrikethrough ? TextDecoration.lineThrough : null,
+        color: Colors.white,
+        fontSize: 16,
+      );
+
+      final styledText = text.substring(range.start, range.end);
+      textSpanChildren.add(TextSpan(
+        text: styledText,
+        style: rangeStyle,
+      ));
+
+      lastEnd = range.end;
+    }
+
+    if (lastEnd < text.length) {
+      final remainingText = text.substring(lastEnd);
+      textSpanChildren.add(TextSpan(
+        text: remainingText,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+        ),
+      ));
+    }
+
+    return TextSpan(children: textSpanChildren);
+  }
+
   Widget _buildDateSeparator(String timestamp) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 16),
@@ -421,7 +515,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   bool _shouldShowDateSeparator(Message message, int index) {
-    return false; // Placeholder logic—implement date comparison as needed
+    return false; // Implement date comparison as needed
   }
 
   String _formatMessageTime(String timestamp) {
@@ -439,7 +533,6 @@ class _ChatScreenState extends State<ChatScreen> {
         color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: [
-
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
             blurRadius: 4,
@@ -449,7 +542,6 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       child: Stack(
         children: [
-          
           Container(
             width: double.infinity,
             constraints: BoxConstraints(
@@ -590,17 +682,46 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                       textCapitalization: TextCapitalization.sentences,
                       contextMenuBuilder: (context, editableTextState) {
+                        final hasSelection =
+                            editableTextState.textEditingValue.selection.start !=
+                                    -1 &&
+                                editableTextState.textEditingValue.selection.end !=
+                                    -1 &&
+                                editableTextState
+                                        .textEditingValue.selection.start !=
+                                    editableTextState
+                                        .textEditingValue.selection.end;
+
+                        final buttonItems = <ContextMenuButtonItem>[];
+
+                        if (hasSelection) {
+                          buttonItems.addAll([
+                            ContextMenuButtonItem(
+                              label: 'Bold',
+                              onPressed: _toggleBold,
+                            ),
+                            ContextMenuButtonItem(
+                              label: 'Italic',
+                              onPressed: _toggleItalic,
+                            ),
+                            ContextMenuButtonItem(
+                              label: 'Strikethrough',
+                              onPressed: _toggleStrikethrough,
+                            ),
+                          ]);
+                        }
+
+                        buttonItems.add(ContextMenuButtonItem(
+                          label: 'Paste',
+                          onPressed: () {
+                            ContextMenuController.removeAny();
+                            _handlePaste();
+                          },
+                        ));
+
                         return AdaptiveTextSelectionToolbar.buttonItems(
                           anchors: editableTextState.contextMenuAnchors,
-                          buttonItems: [
-                            ContextMenuButtonItem(
-                              label: 'Paste',
-                              onPressed: () {
-                                ContextMenuController.removeAny();
-                                _handlePaste();
-                              },
-                            ),
-                          ],
+                          buttonItems: buttonItems,
                         );
                       },
                     ),
